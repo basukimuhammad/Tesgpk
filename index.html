@@ -75,18 +75,20 @@
             outline: none;
         }
         #send-button,
-        #voice-button {
+        #voice-button,
+        #upload-button {
             background-color: #4CAF50;
             color: #fff;
             border: none;
             border-radius: 5px;
-            padding: 10px 20px;
+            padding: 10px;
             margin-left: 10px;
             cursor: pointer;
             transition: background-color 0.3s ease;
         }
         #send-button:hover,
-        #voice-button:hover {
+        #voice-button:hover,
+        #upload-button:hover {
             background-color: #45a049;
         }
         #voice-button {
@@ -95,9 +97,16 @@
         #voice-button:hover {
             background-color: #1a73e8;
         }
-        .voice-animation {
-            animation: voice-animation 1s infinite;
+        #upload-button {
+            background-color: #808080;
+            margin-left: 0;
+            margin-right: 10px;
+            padding: 10px 12px;
         }
+        #upload-button:hover {
+            background-color: #696969;
+        }
+        
         .icon-white {
             color: white !important;
         }
@@ -112,6 +121,39 @@
                 transform: scale(1);
             }
         }
+        .thumbnail-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .thumbnail {
+            position: relative;
+            display: inline-block;
+        }
+        .thumbnail img,
+        .thumbnail video {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 5px;
+        }
+        .remove-thumbnail {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: red;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            transform: translate(50%, -50%);
+        }
     </style>
     <link rel="stylesheet" href="styles.css">
     <link rel="shortcut icon" href="https://telegra.ph/file/c1603a7e2cf99ab1ad084.jpg" type="image/x-icon" />
@@ -125,7 +167,10 @@
     <div class="content">
         <h1>Chat GPT</h1>
         <div id="chat-container"></div>
+        <div class="thumbnail-container" id="thumbnail-container"></div>
         <form id="chat-form">
+            <input type="file" id="file-input" style="display: none;">
+            <button type="button" id="upload-button"><i class="fa-solid fa-plus icon-white"></i></button>
             <input type="text" id="user-input" placeholder="Type in here..." autocomplete="off">
             <button type="submit" id="send-button" disabled><i class="fa fa-paper-plane icon-white"></i></button>
             <button type="button" id="voice-button"><i class="fa fa-microphone icon-white"></i></button>
@@ -160,7 +205,7 @@
             },
         ];
 
-        async function sendMessage(prompt) {
+        async function sendMessage(prompt, file = null) {
             clearGreeting();
 
             if (!chat) {
@@ -173,6 +218,21 @@
             }
             
             const userMessage = $('<div>').addClass('message user-message').text(prompt);
+
+            if (file) {
+                const fileMessage = $('<div>').addClass('message user-message');
+                if (file.type.startsWith('image/')) {
+                    const img = $('<img>').attr('src', URL.createObjectURL(file)).css({ width: '100px', height: '100px' });
+                    fileMessage.append(img);
+                } else if (file.type.startsWith('video/')) {
+                    const video = $('<video controls>').attr('src', URL.createObjectURL(file)).css({ width: '100px', height: '100px' });
+                    fileMessage.append(video);
+                } else {
+                    fileMessage.text(`File: ${file.name}`);
+                }
+                userMessage.append(fileMessage);
+            }
+
             $('#chat-container').append(userMessage);
 
             const botMessage = $('<div>').addClass('message bot-message loading').text(''); // Add loading class
@@ -204,7 +264,7 @@
                     isPlaying = true;
                 })
                 .catch(function(error) {
-                    console.error('Error:', error);
+                    console.error('Error playing audio:', error);
                 });
 
             audioElement.onended = function() {
@@ -221,78 +281,120 @@
             }
         }
 
-        function startSpeechToText() {
-            recognition = new webkitSpeechRecognition();
-            recognition.onstart = function(){  
-                console.log("you can speak now");  
-            }  
-            recognition.onresult = function(event){  
-                var text = event.results[0][0].transcript;  
-                console.log(text);  
-                document.getElementById("user-input").value = text;
-                sendMessage(text);
-                $('#user-input').val(''); // Clear the input field
+        $(document).ready(function() {
+            if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+                alert("Your browser does not support speech recognition. Please try another browser.");
+                return;
             }
-            recognition.start();
-        }
 
-$(document).ready(function() {
-    $('#chat-form').submit(function(event) {
-        event.preventDefault();
-        const userMessage = $('#user-input').val();
-        if (userMessage.trim() !== '') {
-            sendMessage(userMessage);
-            $('#user-input').val('');
-            $('#send-button').prop('disabled', true);
-        }
-    });
+            recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.continuous = true;
+            recognition.interimResults = false;
 
-    $('#voice-button').on('mousedown', function(event) {
-        stopTextToSpeech(); // Stop TTS if it's playing
-        startSpeechToText();
-    }).on('mouseup', function(event) {
-        recognition.stop();
-        stopTextToSpeech(); // Ensure TTS stops when voice button is released
-    });
+            recognition.onresult = function(event) {
+                var transcript = event.results[event.results.length - 1][0].transcript.trim();
+                $('#user-input').val(transcript);
+                $('#send-button').prop('disabled', !transcript);
+            };
 
-    $('#user-input').on('input', function() {
-        const message = $(this).val().trim();
-        $('#send-button').prop('disabled', message === '');
-    });
+            recognition.onend = function() {
+                toggleButtonAnimation(false);
+                if (isLongPress) {
+                    isLongPress = false;
+                    recognition.start();
+                }
+            };
 
-    $('#voice-button').on('mousedown touchstart', function(event) {
-        event.preventDefault();
-        toggleButtonAnimation(true);
-        longPressTimer = setTimeout(function() {
-            isLongPress = true;
-            stopTextToSpeech(); // Stop TTS if it's playing
-            startSpeechToText();
-        }, 500);
-    }).on('mouseup touchend', function(event) {
-        event.preventDefault();
-        clearTimeout(longPressTimer);
-        if (!isLongPress) {
-            const message = $('#user-input').val().trim();
-            if (message !== '') {
-                sendMessage(message);
-                $('#user-input').val('');
-                $('#send-button').prop('disabled', true);
-            }
-        }
-        isLongPress = false;
-        toggleButtonAnimation(false);
-        stopTextToSpeech(); // Ensure TTS stops when voice button is released
-    }).on('mouseleave touchcancel', function(event) {
-        event.preventDefault();
-        clearTimeout(longPressTimer);
-        isLongPress = false;
-        toggleButtonAnimation(false);
-        stopTextToSpeech(); // Ensure TTS stops if touch/mouse leaves the button
-    });
-});
+            $('#chat-form').on('submit', function(e) {
+                e.preventDefault();
+                var userInput = $('#user-input').val().trim();
+                var fileInput = $('#file-input')[0];
+                if (userInput) {
+                    var file = fileInput.files[0];
+                    sendMessage(userInput, file);
+                    $('#user-input').val('');
+                    $('#send-button').prop('disabled', true);
+                    $('#file-input').val(''); // Clear file input
+                    $('#thumbnail-container').empty(); // Clear thumbnails
+                }
+            });
 
+            $('#user-input').on('input', function() {
+                $('#send-button').prop('disabled', !$(this).val().trim());
+            });
 
-        function toggleButtonAnimation(isActive) {
+            $('#upload-button').on('click', function() {
+                $('#file-input').click();
+            });
+
+            $('#file-input').on('change', function(event) {
+                const files = event.target.files;
+                const thumbnailContainer = $('#thumbnail-container');
+                thumbnailContainer.empty(); // Clear previous thumbnails
+                Array.from(files).forEach((file, index) => {
+                    const thumbnail = $('<div>').addClass('thumbnail');
+                    if (file.type.startsWith('image/')) {
+                        const img = $('<img>').attr('src', URL.createObjectURL(file));
+                        thumbnail.append(img);
+                    } else if (file.type.startsWith('video/')) {
+                        const video = $('<video>').attr('src', URL.createObjectURL(file));
+                        thumbnail.append(video);
+                    }
+                    const removeButton = $('<button>').addClass('remove-thumbnail').text('x').on('click', function() {
+                        // Remove file from input
+                        const dt = new DataTransfer();
+                        const fileInput = $('#file-input')[0];
+                        Array.from(fileInput.files).forEach((f, i) => {
+                            if (i !== index) dt.items.add(f); // Keep only files that are not removed
+                        });
+                        fileInput.files = dt.files;
+                        // Remove thumbnail
+                        thumbnail.remove();
+                    });
+                    thumbnail.append(removeButton);
+                    thumbnailContainer.append(thumbnail);
+                });
+            });
+
+            $('#voice-button').on('mousedown', function(event) {
+                stopTextToSpeech(); // Stop TTS if it's playing
+                startSpeechToText();
+            }).on('mouseup', function(event) {
+                recognition.stop();
+                stopTextToSpeech(); // Ensure TTS stops when voice button is released
+            });
+            
+            $('#voice-button').on('mousedown touchstart', function(event) {
+                event.preventDefault();
+                toggleButtonAnimation(true);
+                longPressTimer = setTimeout(function() {
+                    isLongPress = true;
+                    stopTextToSpeech(); // Stop TTS if it's playing
+                    startSpeechToText();
+                }, 500);
+            }).on('mouseup touchend', function(event) {
+                event.preventDefault();
+                clearTimeout(longPressTimer);
+                if (!isLongPress) {
+                    const message = $('#user-input').val().trim();
+                    if (message !== '') {
+                        sendMessage(message);
+                        $('#user-input').val('');
+                        $('#send-button').prop('disabled', true);
+                    }
+                }
+                isLongPress = false;
+                toggleButtonAnimation(false);
+                stopTextToSpeech(); // Ensure TTS stops when voice button is released
+            }).on('mouseleave touchcancel', function(event) {
+                event.preventDefault();
+                clearTimeout(longPressTimer);
+                isLongPress = false;
+                toggleButtonAnimation(false);
+                stopTextToSpeech(); // Ensure TTS stops if touch/mouse leaves the button
+            });
+
+            function toggleButtonAnimation(isActive) {
             var voiceButton = $('#voice-button');
             if (isActive) {
                 voiceButton.css('transform', 'scale(1.2)');
@@ -300,6 +402,7 @@ $(document).ready(function() {
                 voiceButton.css('transform', 'scale(1)');
             }
         }
+        });
     </script>
 </body>
 </html>
