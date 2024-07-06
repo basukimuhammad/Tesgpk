@@ -281,29 +281,34 @@
             }
         }
 
-        $(document).ready(function() {
-            if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
-                alert("Your browser does not support speech recognition. Please try another browser.");
-                return;
+       function startSpeechToText() {
+            recognition = new webkitSpeechRecognition();
+            recognition.onstart = function(){  
+                console.log("you can speak now");  
+            }  
+            recognition.onresult = function(event){  
+                var text = event.results[0][0].transcript;  
+                console.log(text);  
+                document.getElementById("user-input").value = text;
+                sendMessage(text);
+                $('#user-input').val(''); // Clear the input field
             }
+            recognition.start();
+        }
 
-            recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-            recognition.continuous = true;
-            recognition.interimResults = false;
-
-            recognition.onresult = function(event) {
-                var transcript = event.results[event.results.length - 1][0].transcript.trim();
-                $('#user-input').val(transcript);
-                $('#send-button').prop('disabled', !transcript);
-            };
-
-            recognition.onend = function() {
-                toggleButtonAnimation(false);
-                if (isLongPress) {
-                    isLongPress = false;
-                    recognition.start();
+        $(document).ready(function() {
+            $('#chat-form').submit(function(event) {
+                event.preventDefault();
+                const userMessage = $('#user-input').val();
+                const file = $('#file-input')[0].files[0];
+                if (userMessage.trim() !== '' || file) {
+                    sendMessage(userMessage, file);
+                    $('#user-input').val('');
+                    $('#file-input').val('');
+                    $('#send-button').prop('disabled', true);
+                    $('#thumbnail-container').empty(); // Clear thumbnails
                 }
-            };
+            });
 
             $('#chat-form').on('submit', function(e) {
                 e.preventDefault();
